@@ -1,123 +1,160 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Text.Encodings.Web;
 using MemoryPack;
 
 namespace MemoryPackRepacker;
 
-public enum MediaType { None, Audio, Video, Texture }
+class Program
+{
+    static void Main(string[] args)
+    {
+        if (args.Length < 5)
+        {
+            Console.WriteLine("Usage: <server: jp|gl> <mode: deserialize|serialize> <type: table|media|bundle> <input> <output>");
+            return;
+        }
 
-[MemoryPackable]
-public partial class TableBundle {
-    public string Name { get; set; } = string.Empty;
-    public long Size { get; set; }
-    public long Crc { get; set; }
-    public bool isInbuild { get; set; }
-    public bool isChanged { get; set; }
-    public bool IsPrologue { get; set; }
-    public bool IsSplitDownload { get; set; }
-    public List<string> Includes { get; set; } = new();
-}
+        string server = args[0].ToLower();
+        string mode = args[1].ToLower();
+        string type = args[2].ToLower();
+        string inputPath = args[3];
+        string outputPath = args[4];
 
-[MemoryPackable]
-public partial class TablePatchPack {
-    public string Name { get; set; } = string.Empty;
-    public long Size { get; set; }
-    public long Crc { get; set; }
-    public bool IsPrologue { get; set; }
-    public TableBundle[] BundleFiles { get; set; } = Array.Empty<TableBundle>();
-}
+        Console.WriteLine($"[Config] Server: {server}, Mode: {mode}, Type: {type}");
+        Console.WriteLine($"[IO] Input: {inputPath}");
+        Console.WriteLine($"[IO] Output: {outputPath}");
 
-[MemoryPackable]
-public partial class TableCatalog {
-    public Dictionary<string, TableBundle> Table { get; set; } = new();
-    public Dictionary<string, TablePatchPack> TablePack { get; set; } = new();
-}
-
-[MemoryPackable]
-public partial class Media {
-    [JsonPropertyName("path")] public string Path { get; set; } = string.Empty;
-    public string FileName { get; set; } = string.Empty;
-    public long Bytes { get; set; }
-    public long Crc { get; set; }
-    public bool IsPrologue { get; set; }
-    public bool IsSplitDownload { get; set; }
-    public MediaType MediaType { get; set; }
-}
-
-[MemoryPackable]
-public partial class MediaCatalog {
-    public Dictionary<string, Media> Table { get; set; } = new();
-}
-
-[MemoryPackable]
-public partial class BundleFile {
-    public string Name { get; set; } = string.Empty;
-    public long Size { get; set; }
-    public bool IsPrologue { get; set; }
-    public long Crc { get; set; }
-    public bool IsSplitDownload { get; set; }
-    public ulong FileHash { get; set; }
-    public string Signature { get; set; } = string.Empty;
-}
-
-[MemoryPackable]
-public partial class BundlePatchPack {
-    public string PackName { get; set; } = string.Empty;
-    public long PackSize { get; set; }
-    public long Crc { get; set; }
-    public bool IsPrologue { get; set; }
-    public bool IsSplitDownload { get; set; }
-    public BundleFile[] BundleFiles { get; set; } = Array.Empty<BundleFile>();
-}
-
-[MemoryPackable]
-public partial class BundlePatchPackInfo {
-    public string Milestone { get; set; } = string.Empty;
-    public int PatchVersion { get; set; }
-    public BundlePatchPack[] FullPatchPacks { get; set; } = Array.Empty<BundlePatchPack>();
-    public BundlePatchPack[] UpdatePacks { get; set; } = Array.Empty<BundlePatchPack>();
-}
-
-class Program {
-    static void Main(string[] args) {
-        if (args.Length < 4) return;
-
-        string mode = args[0].ToLower();
-        string type = args[1].ToLower();
-        string inputPath = args[2];
-        string outputPath = args[3];
-
-        try {
-            var options = new JsonSerializerOptions { 
-                WriteIndented = true, 
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping 
+        try
+        {
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             };
+            var context = new AppJsonContext(options);
 
-            if (mode == "deserialize") {
+            if (mode == "deserialize")
+            {
+                Console.WriteLine(">>> Starting Deserialization (Bin -> JSON)");
                 byte[] data = File.ReadAllBytes(inputPath);
-                string json = type switch {
-                    "table" => JsonSerializer.Serialize(MemoryPackSerializer.Deserialize<TableCatalog>(data), options),
-                    "media" => JsonSerializer.Serialize(MemoryPackSerializer.Deserialize<MediaCatalog>(data), options),
-                    "bundle" => JsonSerializer.Serialize(MemoryPackSerializer.Deserialize<BundlePatchPackInfo>(data), options),
-                    _ => ""
-                };
-                File.WriteAllText(outputPath, json);
-            } 
-            else if (mode == "serialize") {
-                string json = File.ReadAllText(inputPath);
-                byte[]? bin = type switch {
-                    "table" => MemoryPackSerializer.Serialize(JsonSerializer.Deserialize<TableCatalog>(json)),
-                    "media" => MemoryPackSerializer.Serialize(JsonSerializer.Deserialize<MediaCatalog>(json)),
-                    "bundle" => MemoryPackSerializer.Serialize(JsonSerializer.Deserialize<BundlePatchPackInfo>(json)),
-                    _ => null
-                };
-                if (bin != null) File.WriteAllBytes(outputPath, bin);
+                string json = string.Empty;
+
+                if (server == "jp")
+                {
+                    if (type == "table")
+                    {
+                        var obj = MemoryPackSerializer.Deserialize<TableCatalog>(data);
+                        json = JsonSerializer.Serialize(obj, context.TableCatalog);
+                    }
+                    else if (type == "media")
+                    {
+                        var catalog = MemoryPackSerializer.Deserialize<MediaCatalog>(data);
+                        if (catalog != null)
+                        {
+                            foreach (var m in catalog.Table.Values)
+                            {
+                                m.Path = m.Path.Replace("\\", "/");
+                            }
+                        }
+                        json = JsonSerializer.Serialize(catalog, context.MediaCatalog);
+                    }
+                    else if (type == "bundle")
+                    {
+                        var obj = MemoryPackSerializer.Deserialize<BundlePatchPackInfo>(data);
+                        json = JsonSerializer.Serialize(obj, context.BundlePatchPackInfo);
+                    }
+                }
+                else if (server == "gl")
+                {
+                    if (type == "table")
+                    {
+                        var obj = MemoryPackSerializer.Deserialize<TableCatalogGL>(data);
+                        json = JsonSerializer.Serialize(obj, context.TableCatalogGL);
+                    }
+                    else if (type == "media")
+                    {
+                        var catalog = MemoryPackSerializer.Deserialize<MediaCatalogGL>(data);
+                        if (catalog != null)
+                        {
+                            foreach (var m in catalog.Table.Values) m.Path = m.Path.Replace("\\", "/");
+                            foreach (var m in catalog.Catalog.Values) m.Path = m.Path.Replace("\\", "/");
+                        }
+                        json = JsonSerializer.Serialize(catalog, context.MediaCatalogGL);
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(json))
+                {
+                    File.WriteAllText(outputPath, json);
+                    Console.WriteLine("<<< Deserialization Complete.");
+                }
             }
-        } catch (Exception ex) {
-            Console.WriteLine(ex.Message);
+            else if (mode == "serialize")
+            {
+                Console.WriteLine(">>> Starting Serialization (JSON -> Bin)");
+                string json = File.ReadAllText(inputPath);
+                byte[]? bin = null;
+
+                if (server == "jp")
+                {
+                    if (type == "table")
+                    {
+                        var obj = JsonSerializer.Deserialize(json, context.TableCatalog);
+                        bin = MemoryPackSerializer.Serialize(obj);
+                    }
+                    else if (type == "media")
+                    {
+                        var catalog = JsonSerializer.Deserialize(json, context.MediaCatalog);
+                        if (catalog != null)
+                        {
+                            foreach (var m in catalog.Table.Values)
+                            {
+                                m.Path = m.Path.Replace("/", "\\");
+                            }
+                        }
+                        bin = MemoryPackSerializer.Serialize(catalog);
+                    }
+                    else if (type == "bundle")
+                    {
+                        var obj = JsonSerializer.Deserialize(json, context.BundlePatchPackInfo);
+                        bin = MemoryPackSerializer.Serialize(obj);
+                    }
+                }
+                else if (server == "gl")
+                {
+                    if (type == "table")
+                    {
+                        var obj = JsonSerializer.Deserialize(json, context.TableCatalogGL);
+                        bin = MemoryPackSerializer.Serialize(obj);
+                    }
+                    else if (type == "media")
+                    {
+                        var catalog = JsonSerializer.Deserialize(json, context.MediaCatalogGL);
+                        if (catalog != null)
+                        {
+                            foreach (var m in catalog.Table.Values) m.Path = m.Path.Replace("/", "\\");
+                            foreach (var m in catalog.Catalog.Values) m.Path = m.Path.Replace("/", "\\");
+                        }
+                        bin = MemoryPackSerializer.Serialize(catalog);
+                    }
+                }
+
+                if (bin != null)
+                {
+                    File.WriteAllBytes(outputPath, bin);
+                    Console.WriteLine("<<< Serialization Complete.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Error] {ex.GetType().Name}: {ex.Message}");
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"[Inner Error] {ex.InnerException.Message}");
+            }
         }
     }
 }

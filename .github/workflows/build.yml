@@ -1,0 +1,73 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build for ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            py_id: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+            py_id: linux-x64
+          - os: macos-latest
+            rid: osx-x64
+            py_id: osx-x64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        shell: bash
+        run: |
+          dotnet publish -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishAot=true \
+            -p:PublishNodeJs=false \
+            -o ./publish
+
+      - name: Package with 7z
+        shell: bash
+        run: |
+          7z a -tzip "MemoryPackRepacker-${{ matrix.py_id }}.zip" ./publish/*
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.py_id }}
+          path: "MemoryPackRepacker-${{ matrix.py_id }}.zip"
+
+  create_release:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/**/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
