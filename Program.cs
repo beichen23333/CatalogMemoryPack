@@ -10,6 +10,8 @@ class Program
 {
     static void Main(string[] args)
     {
+        RegisterFormatters();
+
         if (args.Length < 5)
         {
             Console.WriteLine("Usage: <server: jp|gl> <mode: deserialize|serialize> <type: table|media|bundle> <input> <output>");
@@ -37,7 +39,7 @@ class Program
 
             if (mode == "deserialize")
             {
-                Console.WriteLine(">>> Starting Deserialization (Bin -> JSON)");
+                Console.WriteLine(">>> Starting Deserialization");
                 byte[] data = File.ReadAllBytes(inputPath);
                 string json = string.Empty;
 
@@ -53,10 +55,7 @@ class Program
                         var catalog = MemoryPackSerializer.Deserialize<MediaCatalog>(data);
                         if (catalog != null)
                         {
-                            foreach (var m in catalog.Table.Values)
-                            {
-                                m.Path = m.Path.Replace("\\", "/");
-                            }
+                            foreach (var m in catalog.Table.Values) m.Path = m.Path.Replace("\\", "/");
                         }
                         json = JsonSerializer.Serialize(catalog, context.MediaCatalog);
                     }
@@ -88,12 +87,12 @@ class Program
                 if (!string.IsNullOrEmpty(json))
                 {
                     File.WriteAllText(outputPath, json);
-                    Console.WriteLine("<<< Deserialization Complete.");
+                    Console.WriteLine("<<< Complete");
                 }
             }
             else if (mode == "serialize")
             {
-                Console.WriteLine(">>> Starting Serialization (JSON -> Bin)");
+                Console.WriteLine(">>> Starting Serialization");
                 string json = File.ReadAllText(inputPath);
                 byte[]? bin = null;
 
@@ -109,10 +108,7 @@ class Program
                         var catalog = JsonSerializer.Deserialize(json, context.MediaCatalog);
                         if (catalog != null)
                         {
-                            foreach (var m in catalog.Table.Values)
-                            {
-                                m.Path = m.Path.Replace("/", "\\");
-                            }
+                            foreach (var m in catalog.Table.Values) m.Path = m.Path.Replace("/", "\\");
                         }
                         bin = MemoryPackSerializer.Serialize(catalog);
                     }
@@ -144,17 +140,29 @@ class Program
                 if (bin != null)
                 {
                     File.WriteAllBytes(outputPath, bin);
-                    Console.WriteLine("<<< Serialization Complete.");
+                    Console.WriteLine("<<< Complete");
                 }
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Error] {ex.GetType().Name}: {ex.Message}");
-            if (ex.InnerException != null)
-            {
-                Console.WriteLine($"[Inner Error] {ex.InnerException.Message}");
-            }
         }
+    }
+
+    static void RegisterFormatters()
+    {
+        MemoryPackFormatterProvider.Register<TableBundle>();
+        MemoryPackFormatterProvider.Register<TablePatchPack>();
+        MemoryPackFormatterProvider.Register<TableCatalog>();
+        MemoryPackFormatterProvider.Register<TableBundleGL>();
+        MemoryPackFormatterProvider.Register<TableCatalogGL>();
+        MemoryPackFormatterProvider.Register<Media>();
+        MemoryPackFormatterProvider.Register<MediaCatalog>();
+        MemoryPackFormatterProvider.Register<MediaGL>();
+        MemoryPackFormatterProvider.Register<MediaCatalogGL>();
+        MemoryPackFormatterProvider.Register<BundleFile>();
+        MemoryPackFormatterProvider.Register<BundlePatchPack>();
+        MemoryPackFormatterProvider.Register<BundlePatchPackInfo>();
     }
 }
